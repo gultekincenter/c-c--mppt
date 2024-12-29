@@ -1,0 +1,1440 @@
+
+DSPIC30F2010 MPPT Kodu
+DSPIC30F2010 MPPT Code Summary
+Claude 3.5 Haiku
+DSPIC30F2010 MPPT Örnek Kodu
+
+Claude 3.5 Haiku
+Aþaðýda DSPIC30F2010 mikroiþlemcisi için basit bir MPPT (Maximum Power Point Tracking) algoritmasý örneði verilmiþtir:
+
+Kopyala
+#include <p30f2010.h>
+#include <dsp.h>
+
+// MPPT Sabitler
+#define STEP_SIZE 0.01    // Gerilim adým boyutu
+#define MAX_VOLTAGE 20.0  // Maksimum panel gerilimi
+#define MIN_VOLTAGE 0.0   // Minimum panel gerilimi
+
+// Global Deðiþkenler
+float panelVoltage = 0.0;
+float panelCurrent = 0.0;
+float prevPower = 0.0;
+float currentPower = 0.0;
+
+// ADC Okuma Fonksiyonu
+float readPanelVoltage() {
+    // ADC kanalýndan gerilim okuma
+    ADCON1 = 0x0000;  // ADC konfigürasyonu
+    ADCHS = 0x0002;   // Kanal seçimi
+    ADCON3 = 0x0F00; // Örnekleme zamaný
+    
+    ADCON1bits.ADON = 1;  // ADC'yi etkinleþtir
+    ADCON1bits.SAMP = 1;  // Örneklemeyi baþlat
+    
+    while(!ADCON1bits.DONE);  // Dönüþüm tamamlanana kadar bekle
+    
+    return ADCBUF0 * 0.0049; // ADC deðerini gerilime çevir
+}
+
+float readPanelCurrent() {
+    // Benzer þekilde akým okuma
+    // Akým sensöründen ADC kanalý ile okuma
+    ADCHS = 0x0003;  // Farklý bir kanal
+    
+    ADCON1bits.ADON = 1;
+    ADCON1bits.SAMP = 1;
+    
+    while(!ADCON1bits.DONE);
+    
+    return ADCBUF0 * 0.01; // ADC deðerini akýma çevir
+}
+
+// MPPT Perturb and Observe Algoritmasý
+void performMPPT() {
+    // Geçerli güç ve gerilimi hesapla
+    panelVoltage = readPanelVoltage();
+    panelCurrent = readPanelCurrent();
+    currentPower = panelVoltage * panelCurrent;
+    
+    // Güç deðiþimini hesapla
+    if (currentPower > prevPower) {
+        // Güç artýyorsa gerilimi artýr
+        panelVoltage += STEP_SIZE;
+    } else {
+        // Güç azalýyorsa gerilimi azalt
+        panelVoltage -= STEP_SIZE;
+    }
+    
+    // Gerilim sýnýrlarýný kontrol et
+    if (panelVoltage > MAX_VOLTAGE) 
+        panelVoltage = MAX_VOLTAGE;
+    if (panelVoltage < MIN_VOLTAGE)
+        panelVoltage = MIN_VOLTAGE;
+    
+    // PWM ile gerilim kontrolü
+    PDC1 = (int)(panelVoltage * 100);  // PWM duty cycle ayarý
+    
+    // Bir sonraki iterasyon için güncelleme
+    prevPower = currentPower;
+}
+
+// Ana fonksiyon
+int main(void) {
+    // Baþlangýç konfigürasyonlarý
+    TRISB = 0x0000;  // Port konfigürasyonu
+    
+    // PWM konfigürasyonu
+    PTCONbits.PTEN = 1;   // PWM modülünü etkinleþtir
+    PWMCON1 = 0x0077;     // PWM konfigürasyonu
+    
+    // Timer konfigürasyonu
+    T1CON = 0x8000;       // Timer1 konfigürasyonu
+    
+    while(1) {
+        // MPPT algoritmasýný periyodik olarak çalýþtýr
+        performMPPT();
+        
+        // Kýsa gecikme
+        __delay_ms(100);
+    }
+    
+    return 0;
+}
+Bu örnek kod, DSPIC30F2010 mikroiþlemcisi için temel bir MPPT algoritmasý içerir. Kodun ana özellikleri:
+
+Perturb and Observe (P&O) MPPT algoritmasý
+ADC ile gerilim ve akým okuma
+PWM ile güç kontrolü
+Gerilim sýnýrlarý kontrolü
+Kodun çalýþma prensibi:
+
+Panel gerilimi ve akýmýný ölçme
+Anlýk gücü hesaplama
+Güç deðiþimine göre gerilimi ayarlama
+PWM ile çýkýþ gerilimini kontrol etme
+Uyarýlar:
+
+Gerçek uygulamada daha detaylý hata kontrolü gereklidir
+Kalibrasyon ve sensör hassasiyeti önemlidir
+Kod örnek niteliðindedir, proje gereksinimlerine göre uyarlanmalýdýr
+DSPIC30F2010 MPPT saf sinüs inverter tam açýklamalý kodlarý
+
+Claude 3.5 Haiku
+DSPIC30F2010 için Tam Açýklamalý Saf Sinüs Ýnverter ve MPPT Kodlarý:
+
+Kopyala
+// Kütüphaneler ve Tanýmlamalar
+#include <p30f2010.h>
+#include <dsp.h>
+#include <math.h>
+
+// Sistem Parametreleri
+#define PWM_FREQUENCY     20000   // 20 kHz PWM frekansý
+#define INVERTER_FREQUENCY 50      // 50 Hz çýkýþ frekansý
+#define VOLTAGE_REFERENCE 220.0    // AC çýkýþ gerilimi
+#define PI 3.14159265358979
+
+// MPPT Sabitleri
+#define MPPT_STEP 0.01
+#define MAX_VOLTAGE 40.0
+#define MIN_VOLTAGE 10.0
+
+// Global Deðiþkenler
+volatile float solarVoltage = 0;
+volatile float solarCurrent = 0;
+volatile float batteryVoltage = 0;
+volatile float mpptDutyCycle = 0;
+
+// Sinüs Tablosu Tanýmlamasý
+const int SINE_TABLE_SIZE = 256;
+volatile int sineTable[256];
+
+// ADC Konfigürasyon Fonksiyonlarý
+void initADC() {
+    ADCON1 = 0x0000;     // ADC konfigürasyonu
+    ADCON2 = 0x0000;     // Örnekleme zamaný ayarlarý
+    ADCON3 = 0x0F00;     // Dönüþüm zamaný
+    ADCHSbits.CH0SA = 2; // Kanal seçimi
+    ADPCFG = 0xFFFF;     // Dijital pine çevir
+    ADPCFGbits.PCFG2 = 0; // Analog giriþ
+    ADCON1bits.ADON = 1; // ADC'yi etkinleþtir
+}
+
+// PWM Konfigürasyon Fonksiyonu
+void initPWM() {
+    // PWM pin konfigürasyonu
+    TRISB = 0x0000;      // Çýkýþ pini
+    
+    // PWM modülü konfigürasyonu
+    PTCONbits.PTEN = 1;  // PWM modülünü etkinleþtir
+    PWMCON1 = 0x0777;    // PWM kanallarý
+    PTPER = (FCY / (PWM_FREQUENCY * 2)) - 1; // Periyot ayarý
+}
+
+// MPPT Algoritmasý
+float performMPPT(float voltage, float current) {
+    static float prevVoltage = 0;
+    static float prevPower = 0;
+    
+    float currentPower = voltage * current;
+    float deltaPower = currentPower - prevPower;
+    float deltaVoltage = voltage - prevVoltage;
+    
+    // Perturb and Observe Algoritmasý
+    if (deltaPower > 0) {
+        // Güç artýyorsa gerilimi artýr
+        mpptDutyCycle += (deltaVoltage > 0) ? MPPT_STEP : -MPPT_STEP;
+    } else {
+        // Güç azalýyorsa gerilim yönünü tersine çevir
+        mpptDutyCycle -= (deltaVoltage > 0) ? MPPT_STEP : -MPPT_STEP;
+    }
+    
+    // Sýnýr kontrolleri
+    if (mpptDutyCycle > 0.95) mpptDutyCycle = 0.95;
+    if (mpptDutyCycle < 0.05) mpptDutyCycle = 0.05;
+    
+    prevVoltage = voltage;
+    prevPower = currentPower;
+    
+    return mpptDutyCycle;
+}
+
+// Sinüs Tablosu Oluþturma
+void generateSineTable() {
+    for (int i = 0; i < SINE_TABLE_SIZE; i++) {
+        // Normalize edilmiþ sinüs deðerleri
+        float angle = (2 * PI * i) / SINE_TABLE_SIZE;
+        sineTable[i] = (int)(sin(angle) * 32767);
+    }
+}
+
+// Ýnverter Çýkýþ Kontrol Fonksiyonu
+void inverterControl() {
+    static int tableIndex = 0;
+    static float frequency = INVERTER_FREQUENCY;
+    
+    // Sinüs tablosundan deðer okuma
+    int sineValue = sineTable[tableIndex];
+    
+    // PWM duty cycle hesaplama
+    float dutyCycle = (sineValue + 32767) / 65534.0;
+    
+    // PWM çýkýþý ayarlama
+    PDC1 = (int)(dutyCycle * PTPER);
+    
+    // Tablo indeksini güncelleme
+    tableIndex = (tableIndex + 1) % SINE_TABLE_SIZE;
+}
+
+// Aþýrý Gerilim Korumasý
+void overvoltageProtection() {
+    if (batteryVoltage > MAX_VOLTAGE) {
+        // Acil durdurma
+        PTCONbits.PTEN = 0;  // PWM durdur
+    }
+}
+
+// Ana Kontrol Fonksiyonu
+void solarInverterSystem() {
+    // Solar panel gerilim ve akým ölçümü
+    solarVoltage = readSolarVoltage();
+    solarCurrent = readSolarCurrent();
+    batteryVoltage = readBatteryVoltage();
+    
+    // MPPT algoritmasý
+    float mpptDuty = performMPPT(solarVoltage, solarCurrent);
+    
+    // Aþýrý gerilim kontrolü
+    overvoltageProtection();
+    
+    // Ýnverter çýkýþ kontrolü
+    inverterControl();
+}
+
+// Ana Fonksiyon
+int main(void) {
+    // Baþlangýç konfigürasyonlarý
+    initADC();
+    initPWM();
+    generateSineTable();
+    
+    // Kesme ayarlarý
+    T1CON = 0x8000;  // Timer konfigürasyonu
+    
+    while(1) {
+        // Solar inverter sistem döngüsü
+        solarInverterSystem();
+        
+        // Kýsa gecikme
+        __delay_ms(10);
+    }
+    
+    return 0;
+}
+
+// Yardýmcý Okuma Fonksiyonlarý
+float readSolarVoltage() {
+    ADCHS = 0x0002;  // Kanal seçimi
+    ADCON1bits.SAMP = 1;
+    while(!ADCON1bits.DONE);
+    return ADCBUF0 * 0.01;
+}
+
+float readSolarCurrent() {
+    ADCHS = 0x0003;  // Kanal seçimi
+    ADCON1bits.SAMP = 1;
+    while(!ADCON1bits.DONE);
+    return ADCBUF0 * 0.001;
+}
+
+float readBatteryVoltage() {
+    ADCHS = 0x0004;  // Kanal seçimi
+    ADCON1bits.SAMP = 1;
+    while(!ADCON1bits.DONE);
+    return ADCBUF0 * 0.1;
+}
+Kodun Detaylý Açýklamasý:
+
+MPPT Algoritmasý Özellikleri:
+Perturb and Observe metodu
+Dinamik güç takibi
+Gerilim ve akým optimizasyonu
+Ýnverter Kontrol Özellikleri:
+Saf sinüs dalga üretimi
+50 Hz çýkýþ frekansý
+220V referans gerilimi
+Sinüs tablosu kullanýmý
+Güvenlik Özellikleri:
+Aþýrý gerilim korumasý
+Sýnýr kontrolleri
+Dinamik duty cycle yönetimi
+Donaným Konfigürasyonlarý:
+ADC konfigürasyonu
+PWM modülü ayarlarý
+Timer konfigürasyonu
+Gerekli Donaným Bileþenleri:
+
+DSPIC30F2010 mikroiþlemcisi
+Solar panel
+Akým sensörü
+Gerilim sensörü
+Çýkýþ transformatörü
+MOSFET/IGBT anahtarlama elemanlarý
+Önemli Notlar:
+
+Kod örnek niteliðindedir
+Gerçek uygulamada detaylý kalibrasyon gereklidir
+Sensör seçimi ve doðruluk kritiktir
+Soðutma ve mekanik tasarým önemlidir
+DSPIC30F2010 MPPT Saf Sinüs Ýnverter Projesi
+
+Proje Tanýmý:
+Bu proje, DSPIC30F2010 mikrodenetleyicisi kullanarak bir MPPT (Maximum Power Point Tracking) saf sinüs inverter tasarýmýný içermektedir. Proje, 128x64 grafik LCD ekran ile kullanýcý arayüzü sunmaktadýr.
+
+Gereksinimler:
+1. DSPIC30F2010 Mikrodenetleyici
+2. MPPT Algoritmasý
+3. Saf Sinüs Ýnverter Devresi
+4. 128x64 Grafik LCD Ekran
+5. Gerekli Elektronik Bileþenler (dirençler, kapasitörler, transistörler vb.)
+6. Yazýlým Geliþtirme Ortamý (MPLAB X IDE, XC16 Compiler)
+
+Kod ve Uygulama:
+1. MPPT algoritmasýnýn kodu
+2. Saf sinüs inverter kontrol kodu
+3. 128x64 grafik LCD ekran için kullanýcý arayüzü kodu
+4. Proje için gerekli tüm kütüphaneler ve baðýmlýlýklar
+
+Dokümantasyon:
+1. Proje tasarým dökümaný
+2. Kullaným kýlavuzu
+3. Devre þemasý ve PCB tasarýmý
+
+Sonuç:
+Proje tamamlandýðýnda, kullanýcý dostu bir arayüz ile birlikte çalýþan bir MPPT saf sinüs inverter elde edilecektir.
+
+Claude 3.5 Haiku
+DSPIC30F2010 MPPT Saf Sinüs Ýnverter Projesi Detaylý Kod ve Açýklama:
+
+Kopyala
+// Kütüphaneler
+#include <p30f2010.h>
+#include <dsp.h>
+#include <math.h>
+#include "lcd_driver.h"  // Özel LCD kütüphanesi
+
+// Sistem Parametreleri
+#define PWM_FREQUENCY     20000   // 20 kHz PWM 
+#define INVERTER_FREQUENCY 50      // 50 Hz çýkýþ
+#define VOLTAGE_REFERENCE 220.0    // AC çýkýþ gerilimi
+#define PI 3.14159265358979
+
+// Pin Tanýmlamalarý
+#define SOLAR_VOLTAGE_PIN  2
+#define SOLAR_CURRENT_PIN  3
+#define BATTERY_VOLTAGE_PIN 4
+
+// MPPT Sabitleri
+#define MPPT_STEP 0.01
+#define MAX_SOLAR_VOLTAGE 40.0
+#define MIN_SOLAR_VOLTAGE 10.0
+#define MAX_POWER_THRESHOLD 500.0  // Watt
+
+// Global Deðiþkenler
+typedef struct {
+    float solarVoltage;
+    float solarCurrent;
+    float solarPower;
+    float batteryVoltage;
+    float inverterEfficiency;
+    float mpptDutyCycle;
+} SystemData;
+
+SystemData sysData;
+
+// LCD Ekran Güncelleme Fonksiyonu
+void updateLCDDisplay(SystemData* data) {
+    lcd_clear();
+    
+    // Solar Bilgileri
+    lcd_goto(0,0);
+    lcd_printf("Solar V: %.2fV", data->solarVoltage);
+    
+    lcd_goto(0,1);
+    lcd_printf("Solar I: %.2fA", data->solarCurrent);
+    
+    lcd_goto(0,2);
+    lcd_printf("Solar P: %.2fW", data->solarPower);
+    
+    // Batarya ve Ýnverter Bilgileri
+    lcd_goto(0,3);
+    lcd_printf("Batt V: %.2fV", data->batteryVoltage);
+    
+    lcd_goto(0,4);
+    lcd_printf("Eff: %.2f%%", data->inverterEfficiency * 100);
+    
+    lcd_goto(0,5);
+    lcd_printf("MPPT Duty: %.2f%%", data->mpptDutyCycle * 100);
+}
+
+// MPPT Algoritmasý
+float performMPPT(float voltage, float current) {
+    static float prevVoltage = 0;
+    static float prevPower = 0;
+    
+    float currentPower = voltage * current;
+    float deltaPower = currentPower - prevPower;
+    float deltaVoltage = voltage - prevVoltage;
+    
+    // Perturb and Observe Algoritmasý
+    if (deltaPower > 0) {
+        sysData.mpptDutyCycle += (deltaVoltage > 0) ? MPPT_STEP : -MPPT_STEP;
+    } else {
+        sysData.mpptDutyCycle -= (deltaVoltage > 0) ? MPPT_STEP : -MPPT_STEP;
+    }
+    
+    // Sýnýr Kontrolleri
+    sysData.mpptDutyCycle = fmax(0.05, fmin(sysData.mpptDutyCycle, 0.95));
+    
+    // Verim Hesaplamasý
+    sysData.inverterEfficiency = currentPower / (voltage * current);
+    
+    prevVoltage = voltage;
+    prevPower = currentPower;
+    
+    return sysData.mpptDutyCycle;
+}
+
+// ADC Okuma Fonksiyonlarý
+float readAnalogValue(int channel) {
+    ADCHS = channel;
+    ADCON1bits.SAMP = 1;
+    while(!ADCON1bits.DONE);
+    return ADCBUF0 * 0.01;  // Kalibrasyon faktörü
+}
+
+// Sistem Kontrol Fonksiyonu
+void systemControl() {
+    // Ölçümler
+    sysData.solarVoltage = readAnalogValue(SOLAR_VOLTAGE_PIN);
+    sysData.solarCurrent = readAnalogValue(SOLAR_CURRENT_PIN);
+    sysData.batteryVoltage = readAnalogValue(BATTERY_VOLTAGE_PIN);
+    
+    // Güç Hesaplama
+    sysData.solarPower = sysData.solarVoltage * sysData.solarCurrent;
+    
+    // Güvenlik Kontrolleri
+    if (sysData.solarPower > MAX_POWER_THRESHOLD) {
+        // Aþýrý yük durumu
+        PTCONbits.PTEN = 0;  // PWM Durdur
+    }
+    
+    // MPPT Algoritmasý
+    performMPPT(sysData.solarVoltage, sysData.solarCurrent);
+    
+    // LCD Güncelleme
+    updateLCDDisplay(&sysData);
+}
+
+// PWM ve Ýnverter Kontrol
+void inverterPWMControl() {
+    static int sineTableIndex = 0;
+    
+    // Sinüs Tablosu Kullanarak PWM Üretimi
+    float sineValue = sin(2 * PI * sineTableIndex / 256);
+    float dutyCycle = (sineValue + 1) / 2;
+    
+    // PWM Ayarý
+    PDC1 = (int)(dutyCycle * PTPER);
+    
+    sineTableIndex = (sineTableIndex + 1) % 256;
+}
+
+// Ana Fonksiyon
+int main(void) {
+    // Baþlangýç Konfigürasyonlarý
+    initADC();
+    initPWM();
+    lcd_initialize();
+    
+    while(1) {
+        systemControl();
+        inverterPWMControl();
+        __delay_ms(10);
+    }
+    
+    return 0;
+}
+
+// Baþlangýç Fonksiyonlarý
+void initADC() {
+    ADCON1 = 0x0000;
+    ADCON2 = 0x0000;
+    ADPCFG = 0xFFFF;
+    ADPCFGbits.PCFG2 = 0;  // Analog pin
+    ADCON1bits.ADON = 1;
+}
+
+void initPWM() {
+    PTCONbits.PTEN = 1;
+    PWMCON1 = 0x0777;
+    PTPER = (FCY / (PWM_FREQUENCY * 2)) - 1;
+}
+Proje Detaylarý:
+
+Özellikler
+MPPT Algoritmasý
+Saf Sinüs Ýnverter
+128x64 LCD Ekran
+Gerçek zamanlý sistem izleme
+Temel Fonksiyonlar
+Solar panel gerilim/akým ölçümü
+Güç hesaplama
+MPPT optimizasyonu
+LCD ekran güncellemesi
+Güvenlik Özellikleri
+Aþýrý yük korumasý
+Sýnýr kontrolleri
+Verim hesaplama
+Gerekli Donaným
+DSPIC30F2010
+Solar Panel
+Akým/Gerilim Sensörleri
+128x64 LCD Ekran
+PWM Çýkýþ Devresi
+Proje Geliþtirme Önerileri:
+
+Sensör kalibrasyonu
+Geliþmiþ hata yönetimi
+Kullanýcý arayüzü geliþtirme
+Batarya yönetim sistemi entegrasyonu
+DSPIC30F2010 MPPT Saf Sinüs Ýnverter Projesi
+
+Proje Tanýmý:
+Bu proje, DSPIC30F2010 mikrodenetleyicisi kullanarak bir MPPT (Maximum Power Point Tracking) saf sinüs inverter tasarýmýný içermektedir. Proje, 128x64 grafik LCD ekran ile kullanýcý arayüzü sunmaktadýr.
+
+Gereksinimler:
+1. DSPIC30F2010 Mikrodenetleyici
+2. MPPT Algoritmasý
+3. Saf Sinüs Ýnverter Devresi
+4. 128x64 Grafik LCD Ekran
+5. Gerekli Elektronik Bileþenler (dirençler, kapasitörler, transistörler vb.)
+6. Yazýlým Geliþtirme Ortamý (MPLAB X IDE, XC16 Compiler)
+
+Kod ve Uygulama:
+1. MPPT algoritmasýnýn kodu
+2. Saf sinüs inverter kontrol kodu
+3. 128x64 grafik LCD ekran için kullanýcý arayüzü kodu
+4. Proje için gerekli tüm kütüphaneler ve baðýmlýlýklar
+
+Dokümantasyon:
+1. Proje tasarým dökümaný
+2. Kullaným kýlavuzu
+3. Devre þemasý ve PCB tasarýmý
+
+DSPIC30F2010 MPPT Örnek Kodu:
+Aþaðýda, DSPIC30F2010 mikrodenetleyicisi için yazýlmýþ bir MPPT (Maximum Power Point Tracking) örnek kodu bulunmaktadýr. Bu kod, tamamlanmýþ bir örnektir ve referans amaçlýdýr.
+
+```c
+#include "lcdsoft1.h"
+#include "functions.h"
+
+#define buzzer    LATDbits.LATD1
+#define connect   LATEbits.LATE0
+#define fan       LATEbits.LATE2
+#define protect   LATEbits.LATE8
+#define heat      700
+
+signed int global_duty;
+signed int duty_1, duty_2, duty_3;
+int switch_condition;
+int ad_switch = 0;
+int factory[15] = {1, 800, 12, 12, 2500, 40, 0, 148, 138, 140, 120, 50, 80, 88};
+int setting[15];
+char arr[6];
+int speedlimit = 20;
+
+struct {
+    unsigned int downkey:1;
+    unsigned int upkey:1;
+    unsigned int setkey:1;
+    unsigned int setup:1;
+    unsigned int gravity:1;
+    unsigned int loadon:1;
+    unsigned int solon:1;
+    unsigned int chrcorrect:1;
+    unsigned int chon:1;
+    unsigned int swon:1;
+    unsigned int pwmopen:1;
+    unsigned int solraising:1;
+    unsigned int chrraising:1;
+    unsigned int fault:1;
+    unsigned int stop:1;
+    unsigned int msgrtn:1;
+    unsigned int pvtemp:1;
+    unsigned int loadonled:1;
+    unsigned int bklte:1;
+    unsigned int faultled:1;
+} flags;
+
+unsigned int rising = 0;
+unsigned int pol = 0;
+unsigned int *adjust;
+unsigned int *ptr;
+unsigned int adj;
+unsigned int *value;
+signed int moov, mwhtmp;
+unsigned int pvmax;
+unsigned int pvmin;
+unsigned int counter, post;
+unsigned int fault = 0;
+unsigned int millisec = 0;
+unsigned int sec = 0;
+unsigned int min = 0;
+unsigned int mintemp = 0;
+unsigned long hrs = 0;
+long btv;
+
+// Fonksiyonlar
+unsigned int pv_sense();
+void interrupt_Init(void);
+
+unsigned int solwattdisp, max_solwatt, chrtemp, chrtmr, batwatts, bat_v, soladc, hes1adc, ttmr, bzdly, batfultemp;
+unsigned int soldisp, batdisp, chdisp, bath, batl, batfloat, batful, stmr, setuptmr, kwhtemp, kwh, mwh, lcdtmr, champs, ofset1, ofset2;
+unsigned int solvolt, solh, soll, batvolt, batamps, solamps, keyvalue, heatntc, keyavg, ktmr, btmr, exittmr, hes1tmr, batcurtmr;
+unsigned int batsel, ampsel, sol_mv, bat_mv, loadonv, loadofv, batnos, solmax, eraser, solhes, bathes, ct2, batcurrent, solampdisp;
+signed int batclb, solclb, dummy_cycle;
+
+int
+
+Claude 3.5 Haiku
+Anladým, kodun devamýný ve projenin detaylarýný tamamlayalým. Önceki kodun üzerine inþa ederek daha kapsamlý bir MPPT Saf Sinüs Ýnverter projesi için gerekli kodlarý ve açýklamalarý paylaþacaðým.
+
+Proje Detaylý Kod ve Açýklamalarý:
+
+Kopyala
+// Kütüphaneler ve Tanýmlamalar
+#include <p30f2010.h>
+#include <dsp.h>
+#include <math.h>
+#include "lcd_driver.h"
+
+// Sistem Sabitler
+#define PWM_FREQUENCY     20000   
+#define INVERTER_FREQUENCY 50     
+#define VOLTAGE_REFERENCE 220.0   
+#define PI 3.14159265358979
+
+// MPPT Parametreleri
+#define MPPT_STEP 0.01
+#define MAX_VOLTAGE 40.0
+#define MIN_VOLTAGE 10.0
+
+// Pin Tanýmlamalarý
+#define SOLAR_VOLTAGE_PIN      2
+#define SOLAR_CURRENT_PIN      3
+#define BATTERY_VOLTAGE_PIN    4
+#define TEMPERATURE_PIN        5
+
+// Güvenlik Eþikleri
+#define MAX_TEMPERATURE        75.0
+#define MAX_POWER_THRESHOLD    500.0  // Watt
+#define MIN_BATTERY_VOLTAGE    10.5
+#define MAX_BATTERY_VOLTAGE    14.5
+
+// Sistem Veri Yapýsý
+typedef struct {
+    float solarVoltage;
+    float solarCurrent;
+    float solarPower;
+    float batteryVoltage;
+    float temperature;
+    float inverterEfficiency;
+    float mpptDutyCycle;
+    uint8_t systemStatus;
+} SystemParameters;
+
+// Global Deðiþkenler
+SystemParameters sysParams;
+volatile uint16_t errorFlags = 0;
+
+// Hata Bayraklarý
+enum ErrorFlags {
+    OVER_TEMPERATURE = 0x01,
+    LOW_BATTERY      = 0x02,
+    HIGH_BATTERY     = 0x04,
+    OVERLOAD         = 0x08
+};
+
+// MPPT Algoritmasý
+float performMPPT(float voltage, float current) {
+    static float prevVoltage = 0;
+    static float prevPower = 0;
+    
+    float currentPower = voltage * current;
+    float deltaPower = currentPower - prevPower;
+    float deltaVoltage = voltage - prevVoltage;
+    
+    // Perturb and Observe Algoritmasý
+    if (deltaPower > 0) {
+        sysParams.mpptDutyCycle += (deltaVoltage > 0) ? MPPT_STEP : -MPPT_STEP;
+    } else {
+        sysParams.mpptDutyCycle -= (deltaVoltage > 0) ? MPPT_STEP : -MPPT_STEP;
+    }
+    
+    // Sýnýr Kontrolleri
+    sysParams.mpptDutyCycle = fmax(0.05, fmin(sysParams.mpptDutyCycle, 0.95));
+    
+    // Verim Hesaplama
+    sysParams.inverterEfficiency = currentPower / (voltage * current);
+    
+    prevVoltage = voltage;
+    prevPower = currentPower;
+    
+    return sysParams.mpptDutyCycle;
+}
+
+// Güvenlik Kontrolleri
+void performSafetyChecks() {
+    // Sýcaklýk Kontrolü
+    if (sysParams.temperature > MAX_TEMPERATURE) {
+        errorFlags |= OVER_TEMPERATURE;
+        // Sistemi durdur
+        PTCONbits.PTEN = 0;
+    }
+    
+    // Batarya Gerilim Kontrolleri
+    if (sysParams.batteryVoltage < MIN_BATTERY_VOLTAGE) {
+        errorFlags |= LOW_BATTERY;
+    }
+    
+    if (sysParams.batteryVoltage > MAX_BATTERY_VOLTAGE) {
+        errorFlags |= HIGH_BATTERY;
+    }
+    
+    // Güç Aþýmý Kontrolü
+    if (sysParams.solarPower > MAX_POWER_THRESHOLD) {
+        errorFlags |= OVERLOAD;
+        PTCONbits.PTEN = 0;
+    }
+}
+
+// LCD Ekran Güncelleme
+void updateLCDDisplay() {
+    lcd_clear();
+    
+    // Solar Bilgileri
+    lcd_printf("Sol V: %.2fV\n", sysParams.solarVoltage);
+    lcd_printf("Sol I: %.2fA\n", sysParams.solarCurrent);
+    lcd_printf("Sol P: %.2fW\n", sysParams.solarPower);
+    
+    // Batarya Bilgileri
+    lcd_printf("Bat V: %.2fV\n", sysParams.batteryVoltage);
+    
+    // Sistem Durumu
+    lcd_printf("Durum: %s\n", 
+        (errorFlags == 0) ? "Normal" : "Hata Var");
+}
+
+// Ana Sistem Kontrol Fonksiyonu
+void systemControl() {
+    // Ölçümler
+    sysParams.solarVoltage = readAnalogValue(SOLAR_VOLTAGE_PIN);
+    sysParams.solarCurrent = readAnalogValue(SOLAR_CURRENT_PIN);
+    sysParams.batteryVoltage = readAnalogValue(BATTERY_VOLTAGE_PIN);
+    sysParams.temperature = readTemperature(TEMPERATURE_PIN);
+    
+    // Güç Hesaplama
+    sysParams.solarPower = sysParams.solarVoltage * sysParams.solarCurrent;
+    
+    // MPPT Algoritmasý
+    performMPPT(sysParams.solarVoltage, sysParams.solarCurrent);
+    
+    // Güvenlik Kontrolleri
+    performSafetyChecks();
+    
+    // LCD Güncelleme
+    updateLCDDisplay();
+}
+
+// Ana Fonksiyon
+int main(void) {
+    // Baþlangýç Konfigürasyonlarý
+    initADC();
+    initPWM();
+    lcd_initialize();
+    
+    while(1) {
+        systemControl();
+        inverterPWMControl();
+        __delay_ms(10);
+    }
+    
+    return 0;
+}
+Projenin Temel Özellikleri:
+
+MPPT Algoritmasý
+Perturb and Observe metodu
+Dinamik güç takibi
+Sürekli optimizasyon
+Güvenlik Özellikleri
+Sýcaklýk kontrolü
+Batarya gerilim izlemesi
+Aþýrý yük korumasý
+LCD Ekran Özellikleri
+Gerçek zamanlý sistem bilgileri
+Hata durumu gösterimi
+Detaylý ölçüm bilgileri
+Elektronik Gereksinimler
+DSPIC30F2010 mikrodenetleyici
+Analog sensörler
+PWM çýkýþ devresi
+128x64 LCD ekran
+Proje Geliþtirme Önerileri:
+
+Sensör kalibrasyonu
+Geliþmiþ hata yönetimi
+Veri kaydetme
+Kablosuz izleme
+DSPIC30F2010 MPPT Saf Sinüs Ýnverter Projesi
+
+Proje Tanýmý:
+Bu proje, DSPIC30F2010 mikrodenetleyicisi kullanarak bir MPPT (Maximum Power Point Tracking) saf sinüs inverter tasarýmýný içermektedir. Proje, 128x64 grafik LCD ekran ile kullanýcý arayüzü sunmakta ve kablosuz haberleþme özelliðine sahiptir.
+
+Gereksinimler:
+1. DSPIC30F2010 Mikrodenetleyici
+2. MPPT Algoritmasý
+3. Saf Sinüs Ýnverter Devresi
+4. 128x64 Grafik LCD Ekran
+5. Gerekli Elektronik Bileþenler (dirençler, kapasitörler, transistörler vb.)
+6. Yazýlým Geliþtirme Ortamý (MPLAB X IDE, XC16 Compiler)
+7. Kablosuz haberleþme modülü (örneðin, NRF24L01)
+
+Kod ve Uygulama:
+1. MPPT algoritmasýnýn kodu
+2. Saf sinüs inverter kontrol kodu
+3. 128x64 grafik LCD ekran için kullanýcý arayüzü kodu
+4. Kablosuz haberleþme kodu
+5. Proje için gerekli tüm kütüphaneler ve baðýmlýlýklar
+
+Dokümantasyon:
+1. Proje tasarým dökümaný
+2. Kullaným kýlavuzu
+3. Devre þemasý ve PCB tasarýmý
+4. Test raporu ve sonuçlarý
+
+DSPIC30F2010 MPPT SOURCE CODE
+
+#include "lcdsoft1.h"
+#include "functions.h"
+
+#define buzzer LATDbits.LATD1
+#define connect LATEbits.LATE0
+#define fan LATEbits.LATE2
+#define protect LATEbits.LATE8
+#define heat 700
+
+signed int global_duty;
+signed int duty_1, duty_2, duty_3;
+int switch_condition;
+int ad_switch = 0;
+int factory[15] = {1, 800, 12, 12, 2500, 40, 0, 148, 138, 140, 120, 50, 80, 88};
+int setting[15];
+char arr[6];
+int speedlimit = 20;
+
+struct {
+    unsigned int downkey:1;
+    unsigned int upkey:1;
+    unsigned int setkey:1;
+    unsigned int setup:1;
+    unsigned int gravity:1;
+    unsigned int loadon:1;
+    unsigned int solon:1;
+    unsigned int chrcorrect:1;
+    unsigned int chon:1;
+    unsigned int swon:1;
+    unsigned int pwmopen:1;
+    unsigned int solraising:1;
+    unsigned int chrraising:1;
+    unsigned int fault:1;
+    unsigned int stop:1;
+    unsigned int msgrtn:1;
+    unsigned int pvtemp:1;
+    unsigned int loadonled:1;
+    unsigned int bklte:1;
+    unsigned int faultled:1;
+} flags;
+
+unsigned int rising = 0;
+unsigned int pol = 0;
+unsigned int *adjust;
+unsigned int *ptr;
+unsigned int adj;
+unsigned int *value;
+signed int moov, mwhtmp;
+unsigned int pvmax;
+unsigned int pvmin;
+unsigned int counter, post;
+unsigned int fault = 0;
+unsigned int millisec = 0;
+unsigned int sec = 0;
+unsigned int min = 0;
+unsigned int mintemp = 0;
+unsigned long hrs = 0;
+long btv;
+
+unsigned int pv_sense();
+void interrupt_Init(void);
+
+unsigned int solwattdisp, max_solwatt, chrtemp, chrtmr, batwatts, bat_v, soladc, hes1adc, ttmr, bzdly, batfultemp;
+unsigned int soldisp, batdisp, chdisp, bath, batl, batfloat, batful, stmr, setuptmr, kwhtemp, kwh, mwh, lcdtmr, champs, ofset1, ofset2;
+unsigned int solvolt, solh, soll, batvolt, batamps, solamps, keyvalue, heatntc, keyavg, ktmr, btmr, exittmr, hes1tmr, batcurtmr;
+unsigned int batsel, ampsel, sol_mv, bat_mv, loadonv, loadofv, batnos, solmax, eraser, solhes, bathes, ct2, batcurrent, solampdisp;
+signed int batclb, solclb, dummy_cycle;
+
+int flag = 0;
+long result, result1, ch_
+
+Claude 3.5 Haiku
+Projeyi daha kapsamlý ve modern bir yaklaþýmla geliþtirelim. NRF24L01 kablosuz haberleþme modülü ve geliþmiþ MPPT algoritmasý için güncellenmiþ bir kod örneði sunacaðým:
+
+Kopyala
+#include <p30f2010.h>
+#include <libpic30.h>
+#include <math.h>
+#include "nrf24l01.h"
+#include "lcd.h"
+
+// Sistem Sabitleri
+#define PWM_FREQUENCY         20000
+#define INVERTER_FREQUENCY    50
+#define VOLTAGE_REFERENCE     220.0
+#define PI                    3.14159
+
+// MPPT Parametreleri
+#define MPPT_STEP             0.01
+#define MAX_VOLTAGE           40.0
+#define MIN_VOLTAGE           10.0
+
+// Pin Tanýmlamalarý
+#define SOLAR_VOLTAGE_PIN     AN2
+#define SOLAR_CURRENT_PIN     AN3
+#define BATTERY_VOLTAGE_PIN   AN4
+#define TEMPERATURE_PIN       AN5
+
+// Güvenlik Eþikleri
+#define MAX_TEMPERATURE       75.0
+#define MAX_POWER_THRESHOLD   500.0
+#define MIN_BATTERY_VOLTAGE   10.5
+#define MAX_BATTERY_VOLTAGE   14.5
+
+// Kablosuz Haberleþme Yapýsý
+typedef struct {
+    float solarVoltage;
+    float solarCurrent;
+    float batteryVoltage;
+    float temperature;
+    uint8_t systemStatus;
+} WirelessData;
+
+// Sistem Parametreleri Yapýsý
+typedef struct {
+    float solarVoltage;
+    float solarCurrent;
+    float solarPower;
+    float batteryVoltage;
+    float temperature;
+    float inverterEfficiency;
+    float mpptDutyCycle;
+    uint8_t systemStatus;
+} SystemParameters;
+
+// Global Deðiþkenler
+SystemParameters sysParams;
+WirelessData wirelessData;
+NRF24L01 nrfModule;
+volatile uint16_t errorFlags = 0;
+
+// Hata Bayraklarý
+enum ErrorFlags {
+    OVER_TEMPERATURE = 0x01,
+    LOW_BATTERY      = 0x02,
+    HIGH_BATTERY     = 0x04,
+    OVERLOAD         = 0x08
+};
+
+// MPPT Algoritmasý (Geliþmiþ Perturb and Observe)
+float performAdvancedMPPT(float voltage, float current) {
+    static float prevVoltage = 0;
+    static float prevPower = 0;
+    static float stepSize = MPPT_STEP;
+    
+    float currentPower = voltage * current;
+    float deltaPower = currentPower - prevPower;
+    float deltaVoltage = voltage - prevVoltage;
+    
+    // Geliþmiþ Perturb and Observe
+    if (deltaPower > 0) {
+        // Pozitif yönde güç artýþý
+        stepSize = (deltaVoltage > 0) ? stepSize * 1.1 : stepSize * 0.9;
+        sysParams.mpptDutyCycle += (deltaVoltage > 0) ? stepSize : -stepSize;
+    } else {
+        // Negatif yönde güç azalýþý
+        stepSize = (deltaVoltage > 0) ? stepSize * 0.9 : stepSize * 1.1;
+        sysParams.mpptDutyCycle -= (deltaVoltage > 0) ? stepSize : -stepSize;
+    }
+    
+    // Sýnýr Kontrolleri
+    sysParams.mpptDutyCycle = fmax(0.05, fmin(sysParams.mpptDutyCycle, 0.95));
+    
+    // Verim Hesaplama
+    sysParams.inverterEfficiency = currentPower / (voltage * current);
+    
+    prevVoltage = voltage;
+    prevPower = currentPower;
+    
+    return sysParams.mpptDutyCycle;
+}
+
+// Güvenlik Kontrolleri
+void performSafetyChecks() {
+    // Sýcaklýk Kontrolü
+    if (sysParams.temperature > MAX_TEMPERATURE) {
+        errorFlags |= OVER_TEMPERATURE;
+        PTCONbits.PTEN = 0; // PWM Durdur
+    }
+    
+    // Batarya Gerilim Kontrolleri
+    if (sysParams.batteryVoltage < MIN_BATTERY_VOLTAGE) {
+        errorFlags |= LOW_BATTERY;
+    }
+    
+    if (sysParams.batteryVoltage > MAX_BATTERY_VOLTAGE) {
+        errorFlags |= HIGH_BATTERY;
+    }
+    
+    // Güç Aþýmý Kontrolü
+    if (sysParams.solarPower > MAX_POWER_THRESHOLD) {
+        errorFlags |= OVERLOAD;
+        PTCONbits.PTEN = 0;
+    }
+}
+
+// Kablosuz Veri Gönderme
+void sendWirelessData() {
+    wirelessData.solarVoltage = sysParams.solarVoltage;
+    wirelessData.solarCurrent = sysParams.solarCurrent;
+    wirelessData.batteryVoltage = sysParams.batteryVoltage;
+    wirelessData.temperature = sysParams.temperature;
+    wirelessData.systemStatus = errorFlags;
+    
+    nrf24l01_send((uint8_t*)&wirelessData, sizeof(WirelessData));
+}
+
+// LCD Ekran Güncelleme
+void updateLCDDisplay() {
+    lcd_clear();
+    
+    // Solar Bilgileri
+    lcd_printf("Sol V: %.2fV\n", sysParams.solarVoltage);
+    lcd_printf("Sol I: %.2fA\n", sysParams.solarCurrent);
+    lcd_printf("Sol P: %.2fW\n", sysParams.solarPower);
+    
+    // Batarya Bilgileri
+    lcd_printf("Bat V: %.2fV\n", sysParams.batteryVoltage);
+    
+    // Sistem Durumu
+    lcd_printf("Durum: %s\n", 
+        (errorFlags == 0) ? "Normal" : "Hata Var");
+}
+
+// Ana Sistem Kontrol Fonksiyonu
+void systemControl() {
+    // Ölçümler
+    sysParams.solarVoltage = readAnalogValue(SOLAR_VOLTAGE_PIN);
+    sysParams.solarCurrent = readAnalogValue(SOLAR_CURRENT_PIN);
+    sysParams.batteryVoltage = readAnalogValue(BATTERY_VOLTAGE_PIN);
+    sysParams.temperature = readTemperature(TEMPERATURE_PIN);
+    
+    // Güç Hesaplama
+    sysParams.solarPower = sysParams.solarVoltage * sysParams.solarCurrent;
+    
+    // MPPT Algoritmasý
+    performAdvancedMPPT(sysParams.solarVoltage, sysParams.solarCurrent);
+    
+    // Güvenlik Kontrolleri
+    performSafetyChecks();
+    
+    // LCD Güncelleme
+    updateLCDDisplay();
+    
+    // Kablosuz Veri Gönderme
+    sendWirelessData();
+}
+
+// Baþlatma Fonksiyonlarý
+void initSystem() {
+    // ADC Baþlatma
+    ADCInit();
+    
+    // PWM Baþlatma
+    PWMInit();
+    
+    // LCD Baþlatma
+    lcd_init();
+    
+    // NRF24L01 Baþlatma
+    nrf24l01_init(&nrfModule);
+}
+
+// Ana Fonksiyon
+int main(void) {
+    // Sistem Baþlatma
+    initSystem();
+    
+    while(1) {
+        // Sistem Kontrol Döngüsü
+        systemControl();
+        
+        // PWM Kontrol
+        inverterPWMControl();
+        
+        // Kýsa Gecikme
+        __delay_ms(10);
+    }
+    
+    return 0;
+}
+Bu güncellenmiþ kod, önceki versiyona göre þu geliþtirmeleri içerir:
+
+Geliþmiþ MPPT Algoritmasý
+Dinamik adým boyutu
+Daha esnek güç takibi
+Kablosuz Haberleþme
+NRF24L01 modülü entegrasyonu
+Gerçek zamanlý veri gönderimi
+Geliþmiþ Güvenlik Özellikleri
+Detaylý hata yönetimi
+Çoklu güvenlik kontrolleri
+Modüler Kod Yapýsý
+Fonksiyonel ayrýþtýrma
+Kolay geniþletilebilir mimari
+Proje Ýçin Öneriler:
+
+Sensör kalibrasyonu
+Geliþmiþ hata raporlama
+Veri günlükleme
+Mobil uygulama entegrasyonu
+Proje Tanýmý  
+Bu proje, ESP32 kullanarak bir MPPT (Maximum Power Point Tracking) saf sinüs inverter tasarýmýný içermektedir. Proje, 128x64 grafik LCD ekran ile kullanýcý arayüzü sunmakta ve kablosuz haberleþme özelliðine sahip.  
+
+Proje Bileþenleri  
+1. ESP32 Geliþtirme Kartý  
+2. MPPT Kontrol Algoritmasý  
+3. Saf Sinüs Inverter Devresi  
+4. 128x64 Grafik LCD Ekran  
+5. Kablosuz Ýletiþim Modülü (örneðin, Wi-Fi veya Bluetooth)  
+
+Proje Hedefleri  
+- MPPT algoritmasýnýn uygulanmasý  
+- Kullanýcý dostu bir arayüz tasarýmý  
+- Kablosuz veri iletimi ve kontrolü  
+
+Zaman Çizelgesi  
+- Araþtýrma ve Geliþtirme: 2 hafta  
+- Devre Tasarýmý: 3 hafta  
+- Yazýlým Geliþtirme: 4 hafta  
+- Test ve Deðerlendirme: 2 hafta  
+
+Beklenen Sonuçlar  
+- Verimli bir MPPT kontrolü  
+- Kullanýcý arayüzü ile kolay eriþim  
+- Kablosuz kontrol ve izleme imkaný  
+
+Claude 3.5 Haiku
+ESP32 MPPT Saf Sinüs Ýnverter Projesi için kapsamlý bir kod örneði ve açýklama sunacaðým:
+
+Kopyala
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <PID_v1.h>
+
+// Pin Tanýmlamalarý
+#define SOLAR_VOLTAGE_PIN     34
+#define SOLAR_CURRENT_PIN     35
+#define BATTERY_VOLTAGE_PIN   36
+#define INVERTER_PWM_PIN      16
+#define LCD_SCL_PIN           22
+#define LCD_SDA_PIN           21
+
+// Sistem Sabitleri
+#define PWM_FREQUENCY         20000
+#define INVERTER_FREQUENCY    50
+#define VOLTAGE_REFERENCE     220.0
+
+// MPPT Parametreleri
+#define MPPT_STEP             0.01
+#define MAX_VOLTAGE           40.0
+#define MIN_VOLTAGE           10.0
+
+// Güvenlik Eþikleri
+#define MAX_TEMPERATURE       75.0
+#define MAX_POWER_THRESHOLD   500.0
+#define MIN_BATTERY_VOLTAGE   10.5
+#define MAX_BATTERY_VOLTAGE   14.5
+
+// Wi-Fi Ayarlarý
+const char* WIFI_SSID = "MPPT_Inverter";
+const char* WIFI_PASS = "12345678";
+
+// Sistem Parametreleri Yapýsý
+struct SystemParameters {
+    float solarVoltage;
+    float solarCurrent;
+    float solarPower;
+    float batteryVoltage;
+    float temperature;
+    float inverterEfficiency;
+    float mpptDutyCycle;
+    uint8_t systemStatus;
+};
+
+// Global Deðiþkenler
+SystemParameters sysParams;
+WebServer server(80);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, LCD_SCL_PIN, LCD_SDA_PIN);
+
+// PID Kontrol Deðiþkenleri
+double setpoint, input, output;
+PID mpptPID(&input, &output, &setpoint, 2, 5, 1, DIRECT);
+
+// Hata Bayraklarý
+enum ErrorFlags {
+    OVER_TEMPERATURE = 0x01,
+    LOW_BATTERY      = 0x02,
+    HIGH_BATTERY     = 0x04,
+    OVERLOAD         = 0x08
+};
+
+// Geliþmiþ MPPT Algoritmasý
+float performAdvancedMPPT(float voltage, float current) {
+    static float prevVoltage = 0;
+    static float prevPower = 0;
+    static float stepSize = MPPT_STEP;
+    
+    float currentPower = voltage * current;
+    float deltaPower = currentPower - prevPower;
+    float deltaVoltage = voltage - prevVoltage;
+    
+    // Perturb and Observe Algoritmasý
+    if (deltaPower > 0) {
+        stepSize = (deltaVoltage > 0) ? stepSize * 1.1 : stepSize * 0.9;
+        sysParams.mpptDutyCycle += (deltaVoltage > 0) ? stepSize : -stepSize;
+    } else {
+        stepSize = (deltaVoltage > 0) ? stepSize * 0.9 : stepSize * 1.1;
+        sysParams.mpptDutyCycle -= (deltaVoltage > 0) ? stepSize : -stepSize;
+    }
+    
+    // Sýnýr Kontrolleri
+    sysParams.mpptDutyCycle = constrain(sysParams.mpptDutyCycle, 0.05, 0.95);
+    
+    // Verim Hesaplama
+    sysParams.inverterEfficiency = currentPower / (voltage * current);
+    
+    prevVoltage = voltage;
+    prevPower = currentPower;
+    
+    return sysParams.mpptDutyCycle;
+}
+
+// Güvenlik Kontrolleri
+void performSafetyChecks() {
+    sysParams.systemStatus = 0;
+    
+    // Sýcaklýk Kontrolü
+    if (sysParams.temperature > MAX_TEMPERATURE) {
+        sysParams.systemStatus |= OVER_TEMPERATURE;
+        ledcWrite(0, 0); // PWM Durdur
+    }
+    
+    // Batarya Gerilim Kontrolleri
+    if (sysParams.batteryVoltage < MIN_BATTERY_VOLTAGE) {
+        sysParams.systemStatus |= LOW_BATTERY;
+    }
+    
+    if (sysParams.batteryVoltage > MAX_BATTERY_VOLTAGE) {
+        sysParams.systemStatus |= HIGH_BATTERY;
+    }
+    
+    // Güç Aþýmý Kontrolü
+    if (sysParams.solarPower > MAX_POWER_THRESHOLD) {
+        sysParams.systemStatus |= OVERLOAD;
+        ledcWrite(0, 0);
+    }
+}
+
+// LCD Ekran Güncelleme
+void updateLCDDisplay() {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    
+    // Solar Bilgileri
+    u8g2.setCursor(0, 10);
+    u8g2.printf("Sol V: %.2fV", sysParams.solarVoltage);
+    
+    u8g2.setCursor(0, 20);
+    u8g2.printf("Sol I: %.2fA", sysParams.solarCurrent);
+    
+    u8g2.setCursor(0, 30);
+    u8g2.printf("Sol P: %.2fW", sysParams.solarPower);
+    
+    // Batarya Bilgileri
+    u8g2.setCursor(0, 40);
+    u8g2.printf("Bat V: %.2fV", sysParams.batteryVoltage);
+    
+    // Sistem Durumu
+    u8g2.setCursor(0, 50);
+    u8g2.printf("Durum: %s", 
+        (sysParams.systemStatus == 0) ? "Normal" : "Hata Var");
+    
+    u8g2.sendBuffer();
+}
+
+// Web Sunucu Yönlendirmeleri
+void setupWebServer() {
+    server.on("/", HTTP_GET, []() {
+        String html = "<!DOCTYPE html><html><body>";
+        html += "<h1>MPPT Inverter Kontrol Paneli</h1>";
+        html += "<p>Solar Gerilim: " + String(sysParams.solarVoltage) + " V</p>";
+        html += "<p>Solar Akým: " + String(sysParams.solarCurrent) + " A</p>";
+        html += "<p>Solar Güç: " + String(sysParams.solarPower) + " W</p>";
+        html += "<p>Batarya Gerilimi: " + String(sysParams.batteryVoltage) + " V</p>";
+        html += "</body></html>";
+        
+        server.send(200, "text/html", html);
+    });
+    
+    server.begin();
+}
+
+void setup() {
+    Serial.begin(115200);
+    
+    // Pin Modlarý
+    pinMode(SOLAR_VOLTAGE_PIN, INPUT);
+    pinMode(SOLAR_CURRENT_PIN, INPUT);
+    
+    // LCD Baþlatma
+    u8g2.begin();
+    
+    // Wi-Fi Baþlatma
+    WiFi.softAP(WIFI_SSID, WIFI_PASS);
+    
+    // Web Sunucu Kurulumu
+    setupWebServer();
+    
+    // PWM Baþlatma
+    ledcSetup(0, PWM_FREQUENCY, 8);
+    ledcAttachPin(INVERTER_PWM_PIN, 0);
+    
+    // PID Kontrol Ayarlarý
+    mpptPID.SetMode(AUTOMATIC);
+    mpptPID.SetOutputLimits(0, 255);
+}
+
+void loop() {
+    // Ölçümler
+    sysParams.solarVoltage = analogRead(SOLAR_VOLTAGE_PIN) * (5.0 / 4095.0);
+    sysParams.solarCurrent = analogRead(SOLAR_CURRENT_PIN) * (5.0 / 4095.0);
+    sysParams.batteryVoltage = analogRead(BATTERY_VOLTAGE_PIN) * (5.0 / 4095.0);
+    
+    // Güç Hesaplama
+    sysParams.solarPower = sysParams.solarVoltage * sysParams.solarCurrent;
+    
+    // MPPT Algoritmasý
+    float dutyCycle = performAdvancedMPPT(sysParams.solarVoltage, sysParams.solarCurrent);
+    
+    // PWM Kontrol
+    ledcWrite(0, dutyCycle * 255);
+    
+    // Güvenlik Kontrolleri
+    performSafetyChecks();
+    
+    // LCD Güncelleme
+    updateLCDDisplay();
+    
+    // Web Sunucu Ýþlemleri
+    server.handleClient();
+    
+    delay(100);
+}
+Bu kod, ESP32 tabanlý MPPT Saf Sinüs Ýnverter projesi için kapsamlý bir çözüm sunmaktadýr:
+
+Özellikler:
+
+Geliþmiþ MPPT Algoritmasý
+Güvenlik Kontrolleri
+128x64 LCD Ekran Desteði
+Yerleþik Web Sunucu
+Wi-Fi Eriþim Noktasý
+Gerçek Zamanlý Veri Ýzleme
+Gereksinimler:
+
+Arduino IDE
+ESP32 Geliþtirme Kartý
+U8g2 Kütüphanesi
+PID Kütüphanesi
+Kurulum Adýmlarý:
+
+Gerekli kütüphaneleri yükleyin
+Pin baðlantýlarýný yapýn
+Kod içindeki parametreleri projenize göre ayarlayýn
+Proje, esnek bir mimari ile geliþtirilmiþ olup, kolayca geniþletilebilir ve özelleþtirilebilir.
+
+DSPIC30F2010 MPPT Kodu - Monica
